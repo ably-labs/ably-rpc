@@ -67,6 +67,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@ably/rpc/json-rpc': resolve(__dirname, '../src/json-rpc.ts'),
       '@ably/rpc': resolve(__dirname, '../src'),
     },
   },

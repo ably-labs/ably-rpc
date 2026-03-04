@@ -1,5 +1,6 @@
 import { RpcSession } from 'capnweb';
-import { AblyTransport, JsonRpcSession, type ProtocolSession } from '@ably/rpc';
+import { AblyTransport, type ProtocolSession } from '@ably/rpc';
+import { JsonRpcSession } from '@ably/rpc/json-rpc';
 import type { Protocol } from './protocol';
 
 export function createProtocolSession<Remote, Local extends object>(

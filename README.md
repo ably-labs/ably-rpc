@@ -33,8 +33,8 @@ The result: a reliable transport for RPC in decoupled, distributed systems - whi
 
 ## Features
 
-- **JSON-RPC 2.0** - Standard request/response protocol with typed proxies
-- **Cap'n Proto** - Binary serialization with promise pipelining and pass-by-reference via [capnweb](https://www.npmjs.com/package/capnweb)
+- **JSON-RPC 2.0** - Standard request/response protocol with typed proxies. Cross-platform — works with any JSON-RPC 2.0 implementation in any language.
+- **Cap'n Web** - Object-capability RPC with promise pipelining and pass-by-reference via [capnweb](https://www.npmjs.com/package/capnweb). JavaScript/TypeScript only.
 - **Protocol-agnostic transport** - `AblyTransport` works with any RPC protocol that needs send/receive semantics
 - **Echo filtering** - Messages from your own connection are automatically ignored
 - **TypeScript-first** - Full type inference for local and remote method signatures
@@ -46,7 +46,7 @@ The result: a reliable transport for RPC in decoupled, distributed systems - whi
 npm install @ably/rpc ably
 ```
 
-For Cap'n Proto support, also install `capnweb`:
+For Cap'n Web support, also install `capnweb`:
 
 ```bash
 npm install @ably/rpc ably capnweb
@@ -56,7 +56,8 @@ npm install @ably/rpc ably capnweb
 
 ```ts
 import Ably from 'ably';
-import { AblyTransport, JsonRpcSession } from '@ably/rpc';
+import { AblyTransport } from '@ably/rpc';
+import { JsonRpcSession } from '@ably/rpc/json-rpc';
 
 // Use token auth — never expose your API key client-side
 const ably = new Ably.Realtime({ authUrl: '/api/token' });
@@ -76,7 +77,7 @@ await remote.add(2, 3);     // 5
 await remote.greet('World'); // "Hello, World!"
 ```
 
-## Cap'n Proto Quick Start
+## Cap'n Web Quick Start
 
 ```ts
 import Ably from 'ably';
@@ -120,7 +121,23 @@ await remote.increment(); // promise pipelining, pass-by-reference
               └──────────────┘
 ```
 
-Both clients publish to and subscribe on the same Ably channel. `AblyTransport` handles serialization, message queuing, and echo filtering. The RPC session (JSON-RPC or Cap'n Proto) handles protocol framing on top.
+Both clients publish to and subscribe on the same Ably channel. `AblyTransport` handles serialization, message queuing, and echo filtering. The RPC session (JSON-RPC or Cap'n Web) handles protocol framing on top.
+
+## Bundle Size
+
+Sizes below are gzipped, measured with esbuild (minified, browser ESM). The Ably SDK (`ably`) is a peer dependency you already have — these sizes show the **additional** cost of adding RPC support.
+
+| Protocol | Import | Gzipped |
+|---|---|---:|
+| **JSON-RPC 2.0** | `@ably/rpc` + `@ably/rpc/json-rpc` | ~5 KB |
+| **Cap'n Web** | `@ably/rpc` + `capnweb` | ~14 KB |
+
+For reference, the `ably` SDK itself is ~51 KB gzipped.
+
+**Which protocol should I pick?**
+
+- **JSON-RPC 2.0** (~5 KB) is the right choice for most use cases — simple request/response with typed methods. Because it uses the standard JSON-RPC 2.0 wire format, your server can be written in any language.
+- **Cap'n Web** (~14 KB) via [capnweb](https://www.npmjs.com/package/capnweb) gives you promise pipelining and pass-by-reference semantics, which reduce round trips in complex RPC chains. Both sides must be JavaScript/TypeScript.
 
 ## API Reference
 
@@ -166,7 +183,7 @@ Use this type when writing protocol-agnostic code.
 
 ## Demo
 
-The `demo/` directory contains a full working example: a counter app with bidirectional RPC between browser tabs, supporting both JSON-RPC 2.0 and Cap'n Proto.
+The `demo/` directory contains a full working example: a counter app with bidirectional RPC between browser tabs, supporting both JSON-RPC 2.0 and Cap'n Web.
 
 ```bash
 cd demo

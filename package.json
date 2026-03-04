@@ -1,12 +1,13 @@
 {
   "name": "@ably/rpc",
   "version": "0.1.1",
-  "description": "RPC over Ably Realtime — JSON-RPC 2.0 and Cap'n Proto support",
+  "description": "RPC over Ably Realtime — JSON-RPC 2.0 and Cap'n Web support",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/mjs/index.js",
   "types": "./dist/mjs/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "import": {
@@ -16,6 +17,16 @@
       "require": {
         "types": "./dist/cjs/index.d.ts",
         "default": "./dist/cjs/index.js"
+      }
+    },
+    "./json-rpc": {
+      "import": {
+        "types": "./dist/mjs/json-rpc.d.ts",
+        "default": "./dist/mjs/json-rpc.js"
+      },
+      "require": {
+        "types": "./dist/cjs/json-rpc.d.ts",
+        "default": "./dist/cjs/json-rpc.js"
       }
     }
   },
@@ -42,7 +53,7 @@
     "ably",
     "rpc",
     "json-rpc",
-    "capnproto",
+    "capnweb",
     "realtime",
     "pubsub",
     "websocket",

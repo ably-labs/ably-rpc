@@ -22,7 +22,8 @@
     "noFallthroughCasesInSwitch": true,
 
     "paths": {
-      "@ably/rpc": ["../src/index.ts"]
+      "@ably/rpc": ["../src/index.ts"],
+      "@ably/rpc/json-rpc": ["../src/json-rpc.ts"]
     }
   },
   "include": ["client", "shared"],
