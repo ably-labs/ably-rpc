@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Ably from 'ably';
-import { RpcSession } from 'capnweb';
-import type { RpcStub } from 'capnweb';
 import { AblyTransport } from '../../shared/ably-transport';
 import type { CounterAPI, ClientAPI } from '../../shared/types';
+import { type Protocol, PROTOCOLS } from '../../shared/protocol';
+import { createProtocolSession } from '../../shared/create-session';
 import { ConnectionStatus } from './ConnectionStatus';
 
 const CLIENT_ID = `client-${Math.random().toString(36).slice(2, 8)}`;
@@ -13,14 +13,13 @@ interface Notification {
   message: string;
 }
 
-export function ClientView() {
+export function ClientView({ protocol }: { protocol: Protocol }) {
+  const proto = PROTOCOLS[protocol];
   const [counter, setCounter] = useState<number | null>(null);
   const [serverPresent, setServerPresent] = useState(false);
   const [connected, setConnected] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [serverStub, setServerStub] = useState<RpcStub<CounterAPI> | null>(
-    null
-  );
+  const [serverStub, setServerStub] = useState<CounterAPI | null>(null);
   const [pendingOp, setPendingOp] = useState<string | null>(null);
 
   const ablyRef = useRef<Ably.Realtime | null>(null);
@@ -50,14 +49,15 @@ export function ClientView() {
         transportRef.current.abort(new Error('Recreating session'));
         transportRef.current = null;
       }
-      ably.channels.release(`rpc:${CLIENT_ID}`);
+      const channelName = `${proto.rpcChannelPrefix}${CLIENT_ID}`;
+      ably.channels.release(channelName);
 
-      const rpcChannel = ably.channels.get(`rpc:${CLIENT_ID}`);
+      const rpcChannel = ably.channels.get(channelName);
       const transport = new AblyTransport(rpcChannel, false, ably);
       await transport.waitReady();
       transportRef.current = transport;
 
-      const session = new RpcSession<CounterAPI>(transport, clientAPI);
+      const session = createProtocolSession<CounterAPI, ClientAPI>(protocol, transport, clientAPI);
       return session.getRemoteMain();
     }
 
@@ -75,7 +75,7 @@ export function ClientView() {
         setConnected(true);
 
         try {
-          const presenceChannel = ably.channels.get('presence:lobby');
+          const presenceChannel = ably.channels.get(proto.presenceChannel);
 
           // Set up initial RPC session before entering presence
           const server = await createRpcSession(ably);
@@ -103,7 +103,7 @@ export function ClientView() {
           }
 
           // Subscribe to counter state updates
-          const stateChannel = ably.channels.get('state:counter');
+          const stateChannel = ably.channels.get(proto.stateChannel);
           stateChannel.subscribe('update', (msg) => {
             if (mounted) setCounter(msg.data.value);
           });
@@ -182,7 +182,7 @@ export function ClientView() {
       window.removeEventListener('beforeunload', cleanup);
       cleanup();
     };
-  }, [showNotification]);
+  }, [showNotification, protocol, proto]);
 
   const callServer = (method: 'increment' | 'decrement' | 'reset') => {
     if (!serverStub) return;
@@ -215,7 +215,7 @@ export function ClientView() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <a
-              href="/"
+              href={`/?protocol=${protocol}`}
               className="text-gray-400 hover:text-gray-600 transition-colors text-lg"
             >
               &larr;
@@ -225,6 +225,9 @@ export function ClientView() {
                 <h1 className="text-2xl font-bold text-gray-900">Client</h1>
                 <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
                   {CLIENT_ID}
+                </span>
+                <span className="px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                  {proto.label}
                 </span>
               </div>
               <p className="text-sm text-gray-500">Remote counter controls</p>
@@ -253,7 +256,7 @@ export function ClientView() {
             <p className="text-sm text-yellow-700">
               Open a{' '}
               <a
-                href="?role=server"
+                href={`?protocol=${protocol}&role=server`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline font-medium"
@@ -307,10 +310,11 @@ export function ClientView() {
         {/* Code snippet */}
         <div className="bg-gray-900 rounded-xl p-6 shadow-lg">
           <div className="text-xs font-mono text-blue-400 mb-3">
-            // What's running in this tab
+            // What's running in this tab ({proto.label})
           </div>
           <pre className="text-sm text-gray-300 font-mono leading-relaxed whitespace-pre">
-{`const session = new RpcSession<CounterAPI>(
+{protocol === 'capnweb'
+  ? `const session = new RpcSession<CounterAPI>(
   transport, clientAPI
 );
 const server = session.getRemoteMain();
@@ -319,6 +323,18 @@ const server = session.getRemoteMain();
 await server.increment();  // calls server's increment()
 await server.decrement();  // calls server's decrement()
 await server.reset();      // calls server's reset()
+
+// Server can also call us:
+// clientAPI.notify("Hello!") \u2192 toast notification`
+  : `const session = new JsonRpcSession(
+  transport, clientAPI
+);
+const server = session.getRemoteMain();
+
+// These calls cross the network via Ably
+await server.increment();  // JSON-RPC request
+await server.decrement();  // JSON-RPC request
+await server.reset();      // JSON-RPC request
 
 // Server can also call us:
 // clientAPI.notify("Hello!") \u2192 toast notification`}

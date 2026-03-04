@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Ably from 'ably';
-import { RpcSession } from 'capnweb';
 import { AblyTransport } from '../../shared/ably-transport';
 import type { CounterAPI, ClientAPI } from '../../shared/types';
+import { type Protocol, PROTOCOLS } from '../../shared/protocol';
+import { createProtocolSession, type ProtocolSession } from '../../shared/create-session';
 import { ConnectionStatus } from './ConnectionStatus';
 import { LogPanel, type LogEntry } from './LogPanel';
 
@@ -13,7 +14,8 @@ interface ClientInfo {
   joinedAt: Date;
 }
 
-export function ServerView() {
+export function ServerView({ protocol }: { protocol: Protocol }) {
+  const proto = PROTOCOLS[protocol];
   const [connected, setConnected] = useState(false);
   const [clients, setClients] = useState<ClientInfo[]>([]);
   const [counterDisplay, setCounterDisplay] = useState(0);
@@ -21,7 +23,7 @@ export function ServerView() {
   const [blocked, setBlocked] = useState(false);
 
   const counterRef = useRef(0);
-  const sessionsRef = useRef(new Map<string, RpcSession<ClientAPI>>());
+  const sessionsRef = useRef(new Map<string, ProtocolSession<ClientAPI>>());
   const ablyRef = useRef<Ably.Realtime | null>(null);
 
   const addLog = useCallback((type: LogEntry['type'], message: string) => {
@@ -41,7 +43,7 @@ export function ServerView() {
 
     function broadcastCounter(ably: Ably.Realtime) {
       ably.channels
-        .get('state:counter')
+        .get(proto.stateChannel)
         .publish('update', { value: counterRef.current });
     }
 
@@ -69,7 +71,7 @@ export function ServerView() {
         if (!mounted) return;
 
         // Check for existing server before entering presence
-        const presenceChannel = ably.channels.get('presence:lobby');
+        const presenceChannel = ably.channels.get(proto.presenceChannel);
         const members = await presenceChannel.presence.get();
         const hasServer = members.some(
           (m) => m.data && (m.data as { role?: string }).role === 'server'
@@ -107,7 +109,7 @@ export function ServerView() {
             });
           }
 
-          const rpcChannel = ably.channels.get(`rpc:${clientId}`);
+          const rpcChannel = ably.channels.get(`${proto.rpcChannelPrefix}${clientId}`);
           const transport = new AblyTransport(rpcChannel, false, ably);
           await transport.waitReady();
 
@@ -157,7 +159,7 @@ export function ServerView() {
             },
           };
 
-          const session = new RpcSession<ClientAPI>(transport, counterAPI);
+          const session = createProtocolSession<ClientAPI, CounterAPI>(protocol, transport, counterAPI);
           sessionsRef.current.set(clientId, session);
 
           // Send welcome notification
@@ -217,7 +219,7 @@ export function ServerView() {
       window.removeEventListener('beforeunload', cleanup);
       cleanup();
     };
-  }, [addLog]);
+  }, [addLog, protocol, proto]);
 
   if (blocked) {
     return (
@@ -232,7 +234,7 @@ export function ServerView() {
             a time.
           </p>
           <a
-            href="?role=client"
+            href={`?protocol=${protocol}&role=client`}
             className="inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
           >
             Launch as Client Instead
@@ -249,7 +251,7 @@ export function ServerView() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <a
-              href="/"
+              href={`/?protocol=${protocol}`}
               className="text-gray-400 hover:text-gray-600 transition-colors text-lg"
             >
               &larr;
@@ -259,6 +261,9 @@ export function ServerView() {
                 <h1 className="text-2xl font-bold text-gray-900">Server</h1>
                 <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
                   {SERVER_ID}
+                </span>
+                <span className="px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                  {proto.label}
                 </span>
               </div>
               <p className="text-sm text-gray-500">Hosting counter API</p>
@@ -327,10 +332,11 @@ export function ServerView() {
         {/* Code snippet */}
         <div className="bg-gray-900 rounded-xl p-6 shadow-lg">
           <div className="text-xs font-mono text-green-400 mb-3">
-            // What's running in this tab
+            // What's running in this tab ({proto.label})
           </div>
           <pre className="text-sm text-gray-300 font-mono leading-relaxed whitespace-pre">
-{`const counterAPI = {
+{protocol === 'capnweb'
+  ? `const counterAPI = {
   async increment() { return ++counter; },
   async decrement() { return --counter; },
   async reset()     { counter = 0; return 0; },
@@ -339,6 +345,20 @@ export function ServerView() {
 
 // When a client connects via presence:
 const session = new RpcSession<ClientAPI>(
+  transport, counterAPI
+);
+
+// Server can call client too:
+session.getRemoteMain().notify("Hello!");`
+  : `const counterAPI = {
+  async increment() { return ++counter; },
+  async decrement() { return --counter; },
+  async reset()     { counter = 0; return 0; },
+  async getValue()  { return counter; },
+};
+
+// When a client connects via presence:
+const session = new JsonRpcSession(
   transport, counterAPI
 );
 
