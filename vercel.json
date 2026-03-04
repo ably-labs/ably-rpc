@@ -1,4 +1,4 @@
 {
-  "buildCommand": "vite build",
-  "outputDirectory": "client/dist"
+  "buildCommand": "npm run build && cd demo && npx vite build",
+  "outputDirectory": "demo/client/dist"
 }

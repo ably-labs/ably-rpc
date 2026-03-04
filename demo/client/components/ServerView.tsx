@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Ably from 'ably';
-import { AblyTransport } from '../../shared/ably-transport';
+import { AblyTransport, type ProtocolSession } from '@ably/rpc';
 import type { CounterAPI, ClientAPI } from '../../shared/types';
 import { type Protocol, PROTOCOLS } from '../../shared/protocol';
-import { createProtocolSession, type ProtocolSession } from '../../shared/create-session';
+import { createProtocolSession } from '../../shared/create-session';
 import { ConnectionStatus } from './ConnectionStatus';
 import { LogPanel, type LogEntry } from './LogPanel';
 

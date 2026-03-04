@@ -65,6 +65,11 @@ export default defineConfig({
   build: {
     target: 'esnext',
   },
+  resolve: {
+    alias: {
+      '@ably/rpc': resolve(__dirname, '../src'),
+    },
+  },
   optimizeDeps: {
     esbuildOptions: {
       target: 'esnext',

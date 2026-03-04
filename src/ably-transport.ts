@@ -1,8 +1,10 @@
 import * as Ably from 'ably';
 
 /**
- * Ably transport adapter for capnweb
- * Implements the RpcTransport interface
+ * Ably transport adapter for RPC libraries.
+ *
+ * Bridges Ably pub/sub channels to a send/receive transport interface
+ * compatible with capnweb's RpcSession and JsonRpcSession.
  */
 export class AblyTransport {
   private messageQueue: string[] = [];
