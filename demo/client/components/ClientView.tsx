@@ -24,7 +24,6 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
   const ablyRef = useRef<Ably.Realtime | null>(null);
   const transportRef = useRef<AblyTransport | null>(null);
-  const serverPresentRef = useRef(false);
 
   const showNotification = useCallback((message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -36,16 +35,16 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
   useEffect(() => {
     let mounted = true;
+    let hasServer = false;
+    let connecting = false; // Prevents concurrent connectToServer calls
 
-    // Client API for server to call back into
     const clientAPI: ClientAPI = {
       async notify(message: string) {
         if (mounted) showNotification(message);
       },
     };
 
-    async function createRpcSession(ably: Ably.Realtime) {
-      // Release any existing channel to get a clean slate
+    function createRpcSession(ably: Ably.Realtime) {
       if (transportRef.current) {
         transportRef.current.abort(new Error('Recreating session'));
         transportRef.current = null;
@@ -55,11 +54,12 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
       const rpcChannel = ably.channels.get(channelName);
       const transport = new AblyTransport(rpcChannel, false, ably);
-      await transport.waitReady();
       transportRef.current = transport;
 
-      const session = createProtocolSession<CounterAPI, ClientAPI>(protocol, transport, clientAPI);
-      return session.getRemoteMain();
+      return transport.waitReady().then(() => {
+        const session = createProtocolSession<CounterAPI, ClientAPI>(protocol, transport, clientAPI);
+        return session.getRemoteMain();
+      });
     }
 
     const init = async () => {
@@ -77,102 +77,81 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
         try {
           const presenceChannel = ably.channels.get(proto.presenceChannel);
-
-          // Set up initial RPC session before entering presence
-          const server = await createRpcSession(ably);
-
-          // Enter presence as client
-          await presenceChannel.presence.enter({ role: 'client' });
-
-          // Check for existing server — pick oldest by timestamp
-          const members = await presenceChannel.presence.get();
-          const servers = members
-            .filter(m => m.data && (m.data as { role?: string }).role === 'server')
-            .sort((a, b) => a.timestamp - b.timestamp);
-          const hasServer = servers.length > 0;
-
-          if (mounted && hasServer) {
-            setServerPresent(true);
-            serverPresentRef.current = true;
-            // Wrap in arrow fn — React treats function values as updater functions,
-            // and capnweb stubs are Proxies that React would call as functions
-            setServerStub(() => server);
-            try {
-              const value = await server.getValue();
-              if (mounted) setCounter(value);
-            } catch {
-              // Will get value from state channel
-            }
-          }
+          const stateChannel = ably.channels.get(proto.stateChannel);
 
           // Subscribe to counter state updates
-          const stateChannel = ably.channels.get(proto.stateChannel);
           stateChannel.subscribe('update', (msg) => {
             if (mounted) setCounter(msg.data.value);
           });
 
-          // Watch presence for server enter/leave
-          presenceChannel.presence.subscribe('enter', async (member) => {
+          // Subscribe to ALL presence events — this covers:
+          // - 'present': members already on channel when we attach (initial sync)
+          // - 'enter': new members joining after we attach
+          // - 'leave': members departing
+          // On any event, recheck the full presence set for ground truth.
+          presenceChannel.presence.subscribe(async () => {
             if (!mounted) return;
-            const data = member.data as { role?: string } | undefined;
-            if (data?.role !== 'server') return;
-
-            // If we already have a server, ignore — the new server is newer
-            // and will self-terminate via the election logic.
-            if (serverPresentRef.current) return;
-
             try {
-              setServerPresent(true);
-              serverPresentRef.current = true;
-              const newServer = await createRpcSession(ably);
-              if (mounted) {
-                setServerStub(() => newServer);
+              const members = await presenceChannel.presence.get();
+              const servers = members.filter(
+                (m) => m.data && (m.data as { role?: string }).role === 'server'
+              );
+
+              if (servers.length > 0 && !hasServer && !connecting) {
+                connecting = true;
                 try {
-                  const value = await newServer.getValue();
-                  if (mounted) setCounter(value);
-                } catch {
-                  // Will get value from state channel
+                  hasServer = true;
+                  const stub = await createRpcSession(ably);
+                  if (!mounted) return;
+                  setServerPresent(true);
+                  setServerStub(() => stub);
+                  // Verify server is responsive with a timeout — stale presence
+                  // entries from ungraceful disconnects may linger for ~15s.
+                  const timeout = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error('Server not responding')), 5000)
+                  );
+                  try {
+                    const value = await Promise.race([stub.getValue(), timeout]);
+                    if (mounted) setCounter(value);
+                  } catch {
+                    // Server didn't respond — treat as stale, reset and
+                    // let the next presence event retry.
+                    hasServer = false;
+                    if (mounted) {
+                      setServerPresent(false);
+                      setServerStub(null);
+                    }
+                  }
+                } catch (err) {
+                  console.error('Failed to set up RPC session:', err);
+                  hasServer = false;
+                  if (mounted) {
+                    setServerPresent(false);
+                    setServerStub(null);
+                  }
+                } finally {
+                  connecting = false;
+                }
+              } else if (servers.length === 0 && hasServer) {
+                hasServer = false;
+                if (mounted) {
+                  setServerPresent(false);
+                  setServerStub(null);
+                  setCounter(null);
                 }
               }
-            } catch (err) {
-              console.error('Failed to set up RPC session on server enter:', err);
-              if (mounted) {
-                setServerPresent(false);
-                serverPresentRef.current = false;
-                setServerStub(null);
-              }
-            }
-          });
-
-          presenceChannel.presence.subscribe('leave', async (member) => {
-            if (!mounted) return;
-            const data = member.data as { role?: string } | undefined;
-            if (data?.role !== 'server') return;
-
-            // Verify the server is actually gone (not just a duplicate closing)
-            try {
-              const currentMembers = await presenceChannel.presence.get();
-              const serverStillPresent = currentMembers.some(
-                (m) =>
-                  m.data && (m.data as { role?: string }).role === 'server'
-              );
-              if (serverStillPresent) return;
             } catch {
-              // If we can't check, assume the leave is real
+              // Channel might be detaching during cleanup
             }
-
-            if (!mounted) return;
-            setServerPresent(false);
-            serverPresentRef.current = false;
-            setServerStub(null);
-            setCounter(null);
           });
+
+          // Enter presence as client
+          await presenceChannel.presence.enter({ role: 'client' });
         } catch (err) {
           console.error('Failed to initialize client:', err);
           if (mounted) {
             setConnected(false);
             setServerPresent(false);
-            serverPresentRef.current = false;
             setServerStub(null);
           }
         }
@@ -195,8 +174,6 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
   const callServer = (method: 'increment' | 'decrement' | 'reset') => {
     if (!serverStub) return;
-    // Fire-and-forget: counter updates arrive via the state:counter pub/sub
-    // channel, so there's no need to await the RPC response and block the UI.
     setPendingOp(method);
     serverStub[method]()
       .catch((error) => console.error(`Failed to ${method}:`, error))
