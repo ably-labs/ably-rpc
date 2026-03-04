@@ -15,7 +15,7 @@ export class AblyTransport {
   private sendChain: Promise<void> = Promise.resolve();
 
   constructor(
-    private channel: Ably.Types.RealtimeChannelPromise,
+    private channel: Ably.RealtimeChannel,
     private debug = false,
     private ably?: Ably.Realtime
   ) {
@@ -27,14 +27,14 @@ export class AblyTransport {
 
     // Get our connection ID to filter out our own messages
     if (this.ably) {
-      this.myConnectionId = this.ably.connection.id;
+      this.myConnectionId = this.ably.connection.id ?? null;
       if (this.debug) {
         console.log(`[Transport] My connection ID: ${this.myConnectionId}`);
       }
     }
 
     // Subscribe to messages on this channel
-    this.channel.subscribe((message) => {
+    this.channel.subscribe((message: Ably.Message) => {
       if (!this.isOpen) return;
 
       // Filter out our own messages
