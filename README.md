@@ -8,6 +8,8 @@ Building RPC over pub/sub typically means inventing your own request/response pr
 
 Ably replaces the raw WebSocket that capnweb normally uses. That means RPC calls get Ably's connection recovery, global edge routing, message ordering guarantees, and 99.999% uptime — without changing a line of application code.
 
+![CleanShot 2026-03-04 at 01 29 28](https://github.com/user-attachments/assets/d1ce5252-d967-4903-ad52-a8e826c90148)
+
 ## What is capnweb?
 
 [capnweb](https://blog.cloudflare.com/capnweb-javascript-rpc-library/) is Cloudflare's JavaScript RPC library (inspired by Cap'n Proto). Key points:
