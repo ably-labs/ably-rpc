@@ -27,8 +27,27 @@
     "build:mjs": "tsc -p tsconfig.mjs.json",
     "build:cjs": "tsc -p tsconfig.cjs.json && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ably-labs/ably-rpc.git"
+  },
+  "homepage": "https://github.com/ably-labs/ably-rpc#readme",
+  "bugs": {
+    "url": "https://github.com/ably-labs/ably-rpc/issues"
+  },
+  "keywords": [
+    "ably",
+    "rpc",
+    "json-rpc",
+    "capnproto",
+    "realtime",
+    "pubsub",
+    "websocket",
+    "transport"
+  ],
   "dependencies": {
     "json-rpc-2.0": "^1.7.1"
   },
