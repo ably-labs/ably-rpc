@@ -36,7 +36,9 @@
     "ably": "^2.0.0"
   },
   "devDependencies": {
+    "@vercel/node": "^3.0.0",
     "ably": "^2.0.0",
+    "jsonwebtoken": "^9.0.3",
     "typescript": "^5.3.3",
     "vitest": "^3.0.0"
   },
