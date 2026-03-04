@@ -70,31 +70,31 @@ export function ServerView({ protocol }: { protocol: Protocol }) {
       ably.connection.once('connected', async () => {
         if (!mounted) return;
 
-        // Check for existing server before entering presence
         const presenceChannel = ably.channels.get(proto.presenceChannel);
-        const members = await presenceChannel.presence.get();
-        const hasServer = members.some(
-          (m) => m.data && (m.data as { role?: string }).role === 'server'
-        );
 
-        if (hasServer) {
+        // Enter presence first so we get a server-assigned timestamp
+        await presenceChannel.presence.enter({ role: 'server' });
+
+        // Check if we're the oldest server (oldest timestamp wins)
+        const allMembers = await presenceChannel.presence.get();
+        const servers = allMembers
+          .filter(m => m.data && (m.data as { role?: string }).role === 'server')
+          .sort((a, b) => a.timestamp - b.timestamp);
+
+        if (servers.length > 0 && servers[0].connectionId !== ably.connection.id) {
+          // Not the oldest server — step down
+          await presenceChannel.presence.leave();
           ably.close();
           if (mounted) {
             setBlocked(true);
-            addLog(
-              'error',
-              'Another server is already running. Only one server allowed.'
-            );
+            addLog('error', 'A server with an older presence is already running.');
           }
           return;
         }
 
         setConnected(true);
         addLog('info', 'Connected to Ably');
-
-        // Enter presence as server
-        await presenceChannel.presence.enter({ role: 'server' });
-        addLog('info', 'Entered presence as server');
+        addLog('info', 'Entered presence as server (oldest — elected primary)');
 
         // Set up an RPC session for a given client
         async function setupClientSession(clientId: string) {
@@ -175,7 +175,7 @@ export function ServerView({ protocol }: { protocol: Protocol }) {
         }
 
         // Create sessions for any clients already in presence
-        const existingClients = members.filter(
+        const existingClients = allMembers.filter(
           (m) => m.data && (m.data as { role?: string }).role === 'client'
         );
         for (const client of existingClients) {
@@ -186,6 +186,26 @@ export function ServerView({ protocol }: { protocol: Protocol }) {
         presenceChannel.presence.subscribe('enter', async (member) => {
           if (!mounted) return;
           const data = member.data as { role?: string } | undefined;
+
+          if (data?.role === 'server') {
+            // Another server entered — re-verify we're still the oldest
+            const currentMembers = await presenceChannel.presence.get();
+            const currentServers = currentMembers
+              .filter(m => m.data && (m.data as { role?: string }).role === 'server')
+              .sort((a, b) => a.timestamp - b.timestamp);
+
+            if (currentServers.length > 0 && currentServers[0].connectionId !== ably.connection.id) {
+              // We're no longer the oldest — step down
+              await presenceChannel.presence.leave();
+              ably.close();
+              if (mounted) {
+                setBlocked(true);
+                addLog('error', 'A server with an older presence took over.');
+              }
+            }
+            return;
+          }
+
           if (data?.role !== 'client') return;
           await setupClientSession(member.clientId);
         });
@@ -227,11 +247,11 @@ export function ServerView({ protocol }: { protocol: Protocol }) {
         <div className="bg-white rounded-xl shadow-md p-8 max-w-md text-center">
           <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Server Already Running
+            Another Server Has Priority
           </h2>
           <p className="text-gray-600 mb-6">
-            Another server tab is already active. Only one server is allowed at
-            a time.
+            Another server has priority (older presence). Only the oldest server
+            is allowed to run.
           </p>
           <a
             href={`?protocol=${protocol}&role=client`}

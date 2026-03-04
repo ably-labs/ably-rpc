@@ -24,6 +24,7 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
   const ablyRef = useRef<Ably.Realtime | null>(null);
   const transportRef = useRef<AblyTransport | null>(null);
+  const serverPresentRef = useRef(false);
 
   const showNotification = useCallback((message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -83,14 +84,16 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
           // Enter presence as client
           await presenceChannel.presence.enter({ role: 'client' });
 
-          // Check for existing server
+          // Check for existing server — pick oldest by timestamp
           const members = await presenceChannel.presence.get();
-          const hasServer = members.some(
-            (m) => m.data && (m.data as { role?: string }).role === 'server'
-          );
+          const servers = members
+            .filter(m => m.data && (m.data as { role?: string }).role === 'server')
+            .sort((a, b) => a.timestamp - b.timestamp);
+          const hasServer = servers.length > 0;
 
           if (mounted && hasServer) {
             setServerPresent(true);
+            serverPresentRef.current = true;
             // Wrap in arrow fn — React treats function values as updater functions,
             // and capnweb stubs are Proxies that React would call as functions
             setServerStub(() => server);
@@ -114,10 +117,13 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
             const data = member.data as { role?: string } | undefined;
             if (data?.role !== 'server') return;
 
-            // Server now scans existing clients on startup (change B),
-            // so we just need to recreate our RPC session - no leave/re-enter needed.
+            // If we already have a server, ignore — the new server is newer
+            // and will self-terminate via the election logic.
+            if (serverPresentRef.current) return;
+
             try {
               setServerPresent(true);
+              serverPresentRef.current = true;
               const newServer = await createRpcSession(ably);
               if (mounted) {
                 setServerStub(() => newServer);
@@ -132,6 +138,7 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
               console.error('Failed to set up RPC session on server enter:', err);
               if (mounted) {
                 setServerPresent(false);
+                serverPresentRef.current = false;
                 setServerStub(null);
               }
             }
@@ -156,6 +163,7 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
 
             if (!mounted) return;
             setServerPresent(false);
+            serverPresentRef.current = false;
             setServerStub(null);
             setCounter(null);
           });
@@ -164,6 +172,7 @@ export function ClientView({ protocol }: { protocol: Protocol }) {
           if (mounted) {
             setConnected(false);
             setServerPresent(false);
+            serverPresentRef.current = false;
             setServerStub(null);
           }
         }
