@@ -12,7 +12,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 
   const token = jwt.sign(
     {
-      'x-ably-capability': '{"*":["*"]}',
+      'x-ably-capability': '{"rpc:*":["publish","subscribe","presence"]}',
       'x-ably-clientId': clientId,
     },
     keySecret,

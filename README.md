@@ -58,7 +58,8 @@ npm install @ably/rpc ably capnweb
 import Ably from 'ably';
 import { AblyTransport, JsonRpcSession } from '@ably/rpc';
 
-const ably = new Ably.Realtime({ key: 'your-ably-key' });
+// Use token auth — never expose your API key client-side
+const ably = new Ably.Realtime({ authUrl: '/api/token' });
 const channel = ably.channels.get('rpc:my-session');
 const transport = new AblyTransport(channel, false, ably);
 await transport.waitReady();
@@ -82,7 +83,8 @@ import Ably from 'ably';
 import { RpcSession } from 'capnweb';
 import { AblyTransport } from '@ably/rpc';
 
-const ably = new Ably.Realtime({ key: 'your-ably-key' });
+// Use token auth — never expose your API key client-side
+const ably = new Ably.Realtime({ authUrl: '/api/token' });
 const channel = ably.channels.get('rpc:my-session');
 const transport = new AblyTransport(channel, false, ably);
 await transport.waitReady();

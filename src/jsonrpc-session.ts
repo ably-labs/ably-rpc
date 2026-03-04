@@ -3,7 +3,7 @@ import {
   JSONRPCClient,
   JSONRPCServerAndClient,
 } from 'json-rpc-2.0';
-import type { AblyTransport } from './ably-transport';
+import type { AblyTransport } from './ably-transport.js';
 
 /**
  * JSON-RPC 2.0 session over Ably, matching capnweb's RpcSession interface.
